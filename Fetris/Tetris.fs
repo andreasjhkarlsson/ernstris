@@ -20,7 +20,7 @@ type Rotation =
 type Tile =
     S | Z | L | J | T | O | I
     with
-        static member All = [|S; Z; L; J; T; O; I|]
+        static member All = [S; Z; L; J; T; O; I]
 
         static member project tile rotation =
             // Table built from: http://tetris.wikia.com/wiki/SRS
@@ -49,8 +49,24 @@ type Tile =
                 | Ninety ->     [2,0; 2,1; 2,2; 2,3]
                 | OneEighty ->  [0,2; 1,2; 2,2; 3,2]
                 | TwoSeventy -> [1,0; 1,1; 1,2; 1,3]
-            | _ -> []
-            
+            | S ->
+                match rotation with
+                | Zero ->       [1,0; 2,0; 0,1; 1,1]
+                | Ninety ->     [1,0; 1,1; 2,1; 2,2]
+                | OneEighty ->  [1,1; 2,1; 0,2; 1,2]
+                | TwoSeventy -> [0,0; 0,1; 1,1; 1,2]
+            | Z ->
+                match rotation with
+                | Zero ->       [0,0; 1,0; 1,1; 2,1]
+                | Ninety ->     [2,0; 1,1; 2,1; 1,2]
+                | OneEighty ->  [0,1; 1,1; 1,2; 2,2]
+                | TwoSeventy -> [1,0; 0,1; 1,1; 0,2]
+            | T ->
+                match rotation with
+                | Zero ->       [1,0; 0,1; 1,1; 2,1]
+                | Ninety ->     [1,0; 1,1; 2,1; 1,2]
+                | OneEighty ->  [0,1; 1,1; 2,1; 1,2]
+                | TwoSeventy -> [1,0; 0,1; 1,1; 1,2]            
 
 type ActiveTile =
     {
@@ -120,7 +136,7 @@ module Game =
                     message.Reply head
                     return! generate tail
                 | [] ->
-                    return! [I;J;L;O] |> shuffle |> generate
+                    return! Tile.All |> shuffle |> generate
             }
 
             generate []
@@ -268,11 +284,6 @@ module Game =
 
     let step (Agent agent) = agent.Post (Step Manual)
 
-        
-
-
-
-
 type GameWindow (width, height, game) as this =
     inherit Form ()
 
@@ -280,6 +291,7 @@ type GameWindow (width, height, game) as this =
     do
         this.Text <- "Ernstris"
         this.ClientSize <- Size(width,height)
+        
         this.DoubleBuffered <- true
 
     let draw  =
@@ -298,9 +310,7 @@ type GameWindow (width, height, game) as this =
 
             let drawSquare brush (x,y) square =
                 screen.FillRectangle(brush,Rectangle(x*squareSize,y*squareSize,squareSize,squareSize))
-            
-
-
+    
             do drawBackground ()
             do grid.squares |> Map.iter (drawSquare squareBrush)
             Tile.project game.active.tile game.active.rotation
@@ -331,16 +341,14 @@ type GameWindow (width, height, game) as this =
 [<System.STAThread>]
 [<EntryPoint>]
 let main argv = 
-    printfn "%A" argv
 
     let width, height = 10,22
     let squareSize = 30
     
-
     let game = Game.start (width, height)
 
-    let window = GameWindow(width*squareSize,height*squareSize,game)
+    use window = new GameWindow(width*squareSize,height*squareSize,game)
 
     Application.Run(window)
 
-    0 // return an integer exit code
+    0 
