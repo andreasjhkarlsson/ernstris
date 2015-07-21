@@ -107,6 +107,7 @@ type Game = {
     grid: Grid
     score: int
     speed: float
+    over: bool
 }
 
 [<CompilationRepresentation (CompilationRepresentationFlags.ModuleSuffix)>]
@@ -162,7 +163,7 @@ module Game =
 
             let stepIn speed =
                 async {
-                    do! Async.Sleep(500.0 / speed |> int)
+                    do! Async.Sleep(750.0 / speed |> int)
                     mailbox.Post (Step Auto)
                 } |> Async.Start
 
@@ -171,6 +172,12 @@ module Game =
                     ActiveTile.Map game.active
                     |> List.fold (fun grid position -> grid |> Grid.addSquare Square position) game.grid
                 {game with grid = grid}
+                |> (fun game ->
+                    if game.grid.squares |> Map.exists (fun (x,y) _ -> y <= 1) then
+                        {game with over = true}
+                    else
+                        game
+                )
 
             let collides ({active = active; grid = grid} as game) (x,y) =
                 if x < 0 || x >= grid.width then true
@@ -203,6 +210,12 @@ module Game =
                             )
                             |> Map.ofList
                         {game with grid = {game.grid with squares = newSquares}}  
+                        |> (fun game ->
+                            {game with
+                                speed = game.speed + 0.05
+                                score = game.score + (game.speed * 300.0 |> int)
+                            }
+                        )
                         |> clearRow row
 
                     else
@@ -261,42 +274,56 @@ module Game =
                     step Manual game
                 else
                     drop newGame
-                    
+            
+
+            let newGame () =
+                {
+                    active = {tile = pieceGenerator (); position = startPosition; rotation = Zero}
+                    hold = None
+                    holdLock = false
+                    next = pieceGenerator ()
+                    grid = Grid.create (width, height)
+                    score = 0
+                    speed = 1.0
+                    over = false
+                }                
+
             let rec handle game =
                 async {
+
                     let! message = mailbox.Receive ()
+   
                     match message with
                     | State reply ->
                         reply.Reply game
                         return! handle game
-                    | Move direction ->
+                    | Move direction when not game.over ->
                         return!  move direction game |> handle
-                    | Rotate ->
+                    | Rotate when not game.over ->
                         return! rotate game |> handle
-                    | Step ``type`` ->
+                    | Step ``type`` when not game.over ->
                         return! step ``type`` game |> handle
-                    | Drop ->
+                    | Drop when not game.over ->
                         return! drop game |> handle
-                    | Hold ->
+                    | Hold when not game.over ->
                         return! hold game |> handle
+                    | _ ->
+                        return! handle game
                 }
             
-            stepIn 1.0
+            let game = newGame ()
+
+            stepIn game.speed
         
-            handle {
-                active = {tile = pieceGenerator (); position = startPosition; rotation = Zero}
-                hold = None
-                holdLock = false
-                next = pieceGenerator ()
-                grid = Grid.create (width, height)
-                score = 0
-                speed = 1.0
-            }
+            handle game
         
         ) |> Agent
 
+
     
     let state (Agent agent) = agent.PostAndReply State
+
+    let over agent = (state agent).over
 
     let rotate (Agent agent) = agent.Post Rotate
 
@@ -310,8 +337,15 @@ module Game =
 
     let hold (Agent agent) = agent.Post Hold
 
+    let startFrom agent =
+        let {grid = grid} = state agent
+        start (grid.width, grid.height)
+
+
 type GameWindow (width, height, game) as this =
     inherit Form ()
+
+    let mutable game = game
 
     do
         this.Text <- "Ernstris"
@@ -322,9 +356,11 @@ type GameWindow (width, height, game) as this =
     let draw  =
         let backgroundBrush = new SolidBrush(Color.FromArgb(0xFF292929))
         let textBrush = new SolidBrush(Color.FloralWhite)
+        let transparentBlackBrush = new SolidBrush(Color.FromArgb(0x7F000000))
         let fontName = "Times New Roman"
-        let titleFont = new Font(fontName, 14.0f)
-        let contentFont = new Font(fontName,10.0f)
+        let mediumFont = new Font(fontName, 14.0f)
+        let smallFont = new Font(fontName,10.0f)
+        let largeFont = new Font(fontName,36.0f)
         let squareBrush = new SolidBrush(Color.Red)
         let tileBrush = new SolidBrush(Color.LawnGreen)
         fun (screen: Graphics) (width,height) game ->
@@ -351,19 +387,29 @@ type GameWindow (width, height, game) as this =
                         screen.FillRectangle(tileBrush,Rectangle(sx+x*size,sy+y*size,size,size))
                     )                    
 
-                screen.DrawString("ernstris",titleFont,textBrush,10.0f,10.0f)
-                screen.DrawString(sprintf "score: %d" game.score,contentFont,textBrush,10.0f,40.0f)
-                screen.DrawString("next:",contentFont,textBrush,(float32 width)-100.0f,10.0f)
+                screen.DrawString("ernstris",mediumFont,textBrush,10.0f,10.0f)
+                screen.DrawString(sprintf "score: %d" game.score,smallFont,textBrush,10.0f,40.0f)
+                screen.DrawString("next:",smallFont,textBrush,(float32 width)-100.0f,10.0f)
                 drawMiniature (width-50) 12 game.next
-                screen.DrawString("hold:",contentFont,textBrush,(float32 width)-100.0f,40.0f)
+                screen.DrawString("hold:",smallFont,textBrush,(float32 width)-100.0f,40.0f)
                 game.hold |> Option.iter(drawMiniature (width-50) 42)              
     
+            let drawGameOver () =
+
+                screen.FillRectangle(transparentBlackBrush,this.ClientRectangle)
+                let drawFormat = new StringFormat()
+                drawFormat.Alignment <- StringAlignment.Center
+                screen.DrawString("game over.",largeFont,textBrush,RectangleF(0.0f,(float32 height)/2.0f-100.0f,float32 width,300.0f),drawFormat)
+                screen.DrawString("[enter] to play again",mediumFont,textBrush,RectangleF(0.0f,(float32 height)/2.0f,float32 width,300.0f),drawFormat)
+                
+
             do drawBackground ()
             do grid.squares |> Map.iter (drawSquare squareBrush)
             do
                 ActiveTile.Map game.active
                 |> List.iter (fun position -> drawSquare tileBrush position Square)
             do drawInfo ()
+            if game.over then do drawGameOver ()
    
     override this.OnPaint args =
         Game.state game |> draw args.Graphics (width,height)
@@ -385,7 +431,9 @@ type GameWindow (width, height, game) as this =
         | Keys.Up ->
             game |> Game.drop
         | Keys.Enter ->
-            game |> Game.hold
+            match Game.over game with
+            | true -> game <- Game.startFrom game
+            | false -> game |> Game.hold
         | _ ->
            ()
 
