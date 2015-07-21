@@ -152,7 +152,7 @@ module Game =
 
     type StepType = Manual | Auto
 
-    type Message = Step of StepType | State of Reply<Game> | Rotate | Move of Direction | Drop
+    type Message = Step of StepType | State of Reply<Game> | Rotate | Move of Direction | Drop 
 
 
     let start (width, height) =
@@ -308,7 +308,10 @@ type GameWindow (width, height, game) as this =
 
     let draw  =
         let backgroundBrush = new SolidBrush(Color.FromArgb(0xFF292929))
-        let gridPen = new Pen(Color.FloralWhite)
+        let textBrush = new SolidBrush(Color.FloralWhite)
+        let fontName = "Times New Roman"
+        let titleFont = new Font(fontName, 14.0f)
+        let contentFont = new Font(fontName,10.0f)
         let squareBrush = new SolidBrush(Color.Red)
         let tileBrush = new SolidBrush(Color.LawnGreen)
         fun (screen: Graphics) (width,height) game ->
@@ -321,13 +324,32 @@ type GameWindow (width, height, game) as this =
                 screen.FillRectangle(backgroundBrush,Rectangle(0,0,width,height))
 
             let drawSquare brush (x,y) square =
-                screen.FillRectangle(brush,Rectangle(x*squareSize,y*squareSize,squareSize,squareSize))
+                if y = 0 || y = 1 then
+                    () // The (two) top rows are hidden
+                else
+                    screen.FillRectangle(brush,Rectangle(x*squareSize,y*squareSize,squareSize,squareSize))
+
+            let drawInfo () =
+
+                let drawMiniature tile sx sy =
+                    Tile.project tile Rotation.Zero
+                    |> List.iter (fun (x,y) ->
+                        let size = 7
+                        screen.FillRectangle(tileBrush,Rectangle(sx+x*size,sy+y*size,size,size))
+                    )                    
+
+                screen.DrawString("ernstris",titleFont,textBrush,10.0f,10.0f)
+                screen.DrawString(sprintf "score: %d" game.score,contentFont,textBrush,10.0f,40.0f)
+                screen.DrawString("next:",contentFont,textBrush,(float32 width)-100.0f,10.0f)
+                drawMiniature game.next (width-50) 12
+                
     
             do drawBackground ()
             do grid.squares |> Map.iter (drawSquare squareBrush)
-            Tile.project game.active.tile game.active.rotation
-            |> List.map (fun (x,y) -> x + (fst game.active.position), y + (snd game.active.position))
-            |> List.iter (fun position -> drawSquare tileBrush position Square)
+            do
+                ActiveTile.Map game.active
+                |> List.iter (fun position -> drawSquare tileBrush position Square)
+            do drawInfo ()
    
     override this.OnPaint args =
         Game.state game |> draw args.Graphics (width,height)
