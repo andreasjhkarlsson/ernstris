@@ -102,6 +102,7 @@ type Input = Rotate | Hold | Drop | SpeedUp
 type Game = {
     active: ActiveTile
     hold: Tile option
+    holdLock: bool
     next: Tile
     grid: Grid
     score: int
@@ -152,11 +153,12 @@ module Game =
 
     type StepType = Manual | Auto
 
-    type Message = Step of StepType | State of Reply<Game> | Rotate | Move of Direction | Drop 
-
+    type Message = Step of StepType | State of Reply<Game> | Rotate | Move of Direction | Drop | Hold
 
     let start (width, height) =
         MailboxProcessor.Start(fun mailbox ->
+            
+            let startPosition = width/2 - 2, 0
 
             let stepIn speed =
                 async {
@@ -179,7 +181,6 @@ module Game =
             let activeCollides ({active = active} as game) =
                 ActiveTile.Map active |> List.exists (collides game)
                 
-
 
             let clearRows ({grid = grid} as game) =
                 
@@ -210,10 +211,20 @@ module Game =
 
                 clearRow 0 game
 
+
             let spawn game =
                 {game with
-                    active = {tile = game.next; position = (2,0); rotation = Zero}
+                    active = {tile = game.next; position = startPosition; rotation = Zero}
+                    holdLock = false
                     next = pieceGenerator ()}
+
+            let hold (game: Game) =
+                match game.hold with
+                | Some tile when not game.holdLock ->
+                    {game with active = {tile = tile; position = startPosition; rotation = Rotation.Zero}; hold = Some game.active.tile; holdLock = true}
+                | None when not game.holdLock ->
+                    {spawn game with hold = Some game.active.tile; holdLock = true}
+                | _ -> game
 
             let rotate ({active = active} as game) =
                 let newGame =
@@ -251,8 +262,6 @@ module Game =
                 else
                     drop newGame
                     
-                
-
             let rec handle game =
                 async {
                     let! message = mailbox.Receive ()
@@ -268,13 +277,16 @@ module Game =
                         return! step ``type`` game |> handle
                     | Drop ->
                         return! drop game |> handle
+                    | Hold ->
+                        return! hold game |> handle
                 }
             
             stepIn 1.0
         
             handle {
-                active = {tile = pieceGenerator (); position = 2,0; rotation = Zero}
+                active = {tile = pieceGenerator (); position = startPosition; rotation = Zero}
                 hold = None
+                holdLock = false
                 next = pieceGenerator ()
                 grid = Grid.create (width, height)
                 score = 0
@@ -296,9 +308,10 @@ module Game =
 
     let drop (Agent agent) = agent.Post Drop
 
+    let hold (Agent agent) = agent.Post Hold
+
 type GameWindow (width, height, game) as this =
     inherit Form ()
-
 
     do
         this.Text <- "Ernstris"
@@ -331,7 +344,7 @@ type GameWindow (width, height, game) as this =
 
             let drawInfo () =
 
-                let drawMiniature tile sx sy =
+                let drawMiniature sx sy tile =
                     Tile.project tile Rotation.Zero
                     |> List.iter (fun (x,y) ->
                         let size = 7
@@ -341,8 +354,9 @@ type GameWindow (width, height, game) as this =
                 screen.DrawString("ernstris",titleFont,textBrush,10.0f,10.0f)
                 screen.DrawString(sprintf "score: %d" game.score,contentFont,textBrush,10.0f,40.0f)
                 screen.DrawString("next:",contentFont,textBrush,(float32 width)-100.0f,10.0f)
-                drawMiniature game.next (width-50) 12
-                
+                drawMiniature (width-50) 12 game.next
+                screen.DrawString("hold:",contentFont,textBrush,(float32 width)-100.0f,40.0f)
+                game.hold |> Option.iter(drawMiniature (width-50) 42)              
     
             do drawBackground ()
             do grid.squares |> Map.iter (drawSquare squareBrush)
@@ -370,6 +384,8 @@ type GameWindow (width, height, game) as this =
             game |> Game.step
         | Keys.Up ->
             game |> Game.drop
+        | Keys.Enter ->
+            game |> Game.hold
         | _ ->
            ()
 
