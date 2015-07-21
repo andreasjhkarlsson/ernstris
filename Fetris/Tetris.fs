@@ -152,7 +152,7 @@ module Game =
 
     type StepType = Manual | Auto
 
-    type Message = Step of StepType | State of Reply<Game> | Rotate | Move of Direction
+    type Message = Step of StepType | State of Reply<Game> | Rotate | Move of Direction | Drop
 
 
     let start (width, height) =
@@ -209,7 +209,6 @@ module Game =
                                                
 
                 clearRow 0 game
-                    
 
             let spawn game =
                 {game with
@@ -243,6 +242,15 @@ module Game =
                 |> function
                 | true -> game |> (lock >> spawn) |> clearRows
                 | false -> {game with active = {game.active with position = (x,y+1)}}  
+
+            let rec drop ({active = active} as game) =
+                let x,y = active.position
+                let newGame = {game with active = {active with position = x, y+1}}
+                if activeCollides newGame then
+                    step Manual game
+                else
+                    drop newGame
+                    
                 
 
             let rec handle game =
@@ -258,6 +266,8 @@ module Game =
                         return! rotate game |> handle
                     | Step ``type`` ->
                         return! step ``type`` game |> handle
+                    | Drop ->
+                        return! drop game |> handle
                 }
             
             stepIn 1.0
@@ -283,6 +293,8 @@ module Game =
     let moveRight = move Right
 
     let step (Agent agent) = agent.Post (Step Manual)
+
+    let drop (Agent agent) = agent.Post Drop
 
 type GameWindow (width, height, game) as this =
     inherit Form ()
@@ -334,6 +346,8 @@ type GameWindow (width, height, game) as this =
             game |> Game.moveRight
         | Keys.Down ->
             game |> Game.step
+        | Keys.Up ->
+            game |> Game.drop
         | _ ->
            ()
 
