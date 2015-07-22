@@ -416,6 +416,8 @@ type GameWindow (width, height, game) as this =
         let largeFont = new Font(fontName,36.0f)
         let squareBrush = new SolidBrush(Color.Red)
         let tileBrush = new SolidBrush(Color.LawnGreen)
+        let outlinePen = new Pen(Color.Black)
+        outlinePen.Width <- 2.0f
         fun (screen: Graphics) (width,height) game ->
 
             let grid = game.grid
@@ -429,7 +431,9 @@ type GameWindow (width, height, game) as this =
                 if y = 0 || y = 1 then
                     () // The (two) top rows are hidden
                 else
-                    screen.DrawImage(image,Rectangle(x*squareSize,y*squareSize,squareSize,squareSize))
+                    let rect = Rectangle(x*squareSize,y*squareSize,squareSize,squareSize)
+                    screen.DrawImage(image,rect)
+                    screen.DrawRectangle(outlinePen,rect)
 
             let drawInfo () =
 
