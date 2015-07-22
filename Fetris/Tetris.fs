@@ -3,8 +3,6 @@ open System.Windows.Forms
 open System.Drawing
 open System.Threading
 
-type Square = Square
-
 type Rotation =
     | Zero
     | Ninety
@@ -17,56 +15,111 @@ type Rotation =
         | OneEighty -> TwoSeventy
         | TwoSeventy -> Zero
 
-type Tile =
-    S | Z | L | J | T | O | I
-    with
-        static member All = [S; Z; L; J; T; O; I]
 
-        static member project tile rotation =
-            // Table built from: http://tetris.wikia.com/wiki/SRS
+
+type Square = Square of Image
+
+
+type Tile = S | Z | L | J | T | O | I
+    
+[<CompilationRepresentation (CompilationRepresentationFlags.ModuleSuffix)>]        
+module Tile =
+
+    let rotate rotation (image: Image) =
+        let rotated = new Bitmap(image.Width,image.Height)
+        rotated.SetResolution(image.HorizontalResolution,image.VerticalResolution)
+        let g = Graphics.FromImage(rotated)
+        g.TranslateTransform((float32 image.Width)/2.0f,(float32 image.Height)/2.0f)
+        match rotation with
+        | Zero -> ()
+        | Ninety -> g.RotateTransform(90.0f)
+        | OneEighty -> g.RotateTransform(180.0f)
+        | TwoSeventy -> g.RotateTransform(270.0f)
+        g.TranslateTransform(-(float32 image.Width)/2.0f,-(float32 image.Height)/2.0f)
+        g.DrawImage(image,PointF(0.0f,0.0f))
+        rotated :> Image    
+
+    let all = [S; Z; L; J; T; O; I]
+
+    let squares = 
+        let rotations (images : Image []) =
+                [(Zero, images)
+                 (Ninety, images |> Array.map (rotate Ninety))
+                 (OneEighty, images |> Array.map (rotate OneEighty))
+                 (TwoSeventy, images |> Array.map (rotate TwoSeventy))]
+
+        all
+        |> List.map (fun tile ->
             match tile with
-            | O ->
-                match rotation with
-                | Zero ->       [1,0; 2,0; 1,1; 2,1]
-                | Ninety ->     [1,0; 2,0; 1,1; 2,1]
-                | OneEighty ->  [1,0; 2,0; 1,1; 2,1]
-                | TwoSeventy -> [1,0; 2,0; 1,1; 2,1]
-            | J ->
-                match rotation with
-                | Zero ->       [0,0; 0,1; 1,1; 2,1]
-                | Ninety ->     [1,0; 2,0; 1,1; 1,2]
-                | OneEighty ->  [0,1; 1,1; 2,1; 2,2]
-                | TwoSeventy -> [1,0; 1,1; 0,2; 1,2]
-            | L ->
-                match rotation with
-                | Zero ->       [0,1; 1,1; 2,1; 2,0]
-                | Ninety ->     [1,0; 1,1; 1,2; 2,2]
-                | OneEighty ->  [0,1; 1,1; 2,1; 0,2]
-                | TwoSeventy -> [0,0; 1,0; 1,1; 1,2]
-            | I ->
-                match rotation with
-                | Zero ->       [0,1; 1,1; 2,1; 3,1]
-                | Ninety ->     [2,0; 2,1; 2,2; 2,3]
-                | OneEighty ->  [0,2; 1,2; 2,2; 3,2]
-                | TwoSeventy -> [1,0; 1,1; 1,2; 1,3]
-            | S ->
-                match rotation with
-                | Zero ->       [1,0; 2,0; 0,1; 1,1]
-                | Ninety ->     [1,0; 1,1; 2,1; 2,2]
-                | OneEighty ->  [1,1; 2,1; 0,2; 1,2]
-                | TwoSeventy -> [0,0; 0,1; 1,1; 1,2]
-            | Z ->
-                match rotation with
-                | Zero ->       [0,0; 1,0; 1,1; 2,1]
-                | Ninety ->     [2,0; 1,1; 2,1; 1,2]
-                | OneEighty ->  [0,1; 1,1; 1,2; 2,2]
-                | TwoSeventy -> [1,0; 0,1; 1,1; 0,2]
-            | T ->
-                match rotation with
-                | Zero ->       [1,0; 0,1; 1,1; 2,1]
-                | Ninety ->     [1,0; 1,1; 2,1; 1,2]
-                | OneEighty ->  [0,1; 1,1; 2,1; 1,2]
-                | TwoSeventy -> [1,0; 0,1; 1,1; 1,2]            
+            | T -> Resource.t
+            | O -> Resource.o
+            | L -> Resource.l
+            | I -> Resource.i
+            | J -> Resource.j
+            | Z -> Resource.z
+            | S -> Resource.s
+            |> rotations
+            |> List.map (fun (rotation,images) -> (tile,rotation), images)
+            |> List.toSeq
+        )
+        |> List.toSeq
+        |> Seq.concat
+        |> Map.ofSeq
+        
+
+    let square tile n rotation=
+        squares
+        |> Map.find (tile, rotation)
+        |> (fun array -> array.[n])
+        |> Square
+
+            
+
+    let project tile rotation =
+        // Table built from: http://tetris.wikia.com/wiki/SRS
+        match tile with
+        | O ->
+            match rotation with
+            | Zero ->       [1,0; 2,0; 1,1; 2,1]
+            | Ninety ->     [2,0; 2,1; 1,0; 1,1]
+            | OneEighty ->  [2,1; 1,1; 2,0; 1,0]
+            | TwoSeventy -> [1,1; 1,0; 2,1; 2,0]
+        | J ->
+            match rotation with
+            | Zero ->       [0,0; 0,1; 1,1; 2,1]
+            | Ninety ->     [2,0; 1,0; 1,1; 1,2]
+            | OneEighty ->  [2,2; 2,1; 1,1; 0,1]
+            | TwoSeventy -> [0,2; 1,2; 1,1; 1,0]
+        | L ->
+            match rotation with
+            | Zero ->       [2,0; 0,1; 1,1; 2,1]
+            | Ninety ->     [2,2; 1,0; 1,1; 1,2]
+            | OneEighty ->  [0,2; 2,1; 1,1; 0,1]
+            | TwoSeventy -> [0,0; 1,2; 1,1; 1,0]
+        | I ->
+            match rotation with
+            | Zero ->       [2,0; 2,1; 2,2; 2,3]
+            | Ninety ->     [3,2; 2,2; 1,2; 0,2]
+            | OneEighty ->  [1,3; 1,2; 1,1; 1,0]
+            | TwoSeventy -> [0,1; 1,1; 2,1; 3,1]
+        | S ->
+            match rotation with
+            | Zero ->       [1,0; 2,0; 0,1; 1,1]
+            | Ninety ->     [2,1; 2,2; 1,0; 1,1]
+            | OneEighty ->  [1,2; 0,2; 2,1; 1,1]
+            | TwoSeventy -> [0,1; 0,0; 1,2; 1,1]
+        | Z ->
+            match rotation with
+            | Zero ->       [0,0; 1,0; 1,1; 2,1]
+            | Ninety ->     [2,0; 2,1; 1,1; 1,2]
+            | OneEighty ->  [2,2; 1,2; 1,1; 0,1]
+            | TwoSeventy -> [0,2; 0,1; 1,1; 1,0]
+        | T ->
+            match rotation with
+            | Zero ->       [1,0; 0,1; 2,1; 1,1]
+            | Ninety ->     [2,1; 1,0; 1,2; 1,1]
+            | OneEighty ->  [1,2; 2,1; 0,1; 1,1]
+            | TwoSeventy -> [0,1; 1,2; 1,0; 1,1]       
 
 type ActiveTile =
     {
@@ -138,7 +191,7 @@ module Game =
                     message.Reply head
                     return! generate tail
                 | [] ->
-                    return! Tile.All |> shuffle |> generate
+                    return! Tile.all |> shuffle |> generate
             }
 
             generate []
@@ -168,9 +221,9 @@ module Game =
                 } |> Async.Start
 
             let lock (game: Game) =
-                let grid =
+                let grid, _ =
                     ActiveTile.Map game.active
-                    |> List.fold (fun grid position -> grid |> Grid.addSquare Square position) game.grid
+                    |> List.fold (fun (grid,i) position -> grid |> Grid.addSquare (Tile.square game.active.tile i game.active.rotation) position, i+1) (game.grid,0)
                 {game with grid = grid}
                 |> (fun game ->
                     if game.grid.squares |> Map.exists (fun (x,y) _ -> y <= 1) then
@@ -372,11 +425,11 @@ type GameWindow (width, height, game) as this =
             let drawBackground () =
                 screen.FillRectangle(backgroundBrush,Rectangle(0,0,width,height))
 
-            let drawSquare brush (x,y) square =
+            let drawSquare (x,y) (Square image) =
                 if y = 0 || y = 1 then
                     () // The (two) top rows are hidden
                 else
-                    screen.FillRectangle(brush,Rectangle(x*squareSize,y*squareSize,squareSize,squareSize))
+                    screen.DrawImage(image,Rectangle(x*squareSize,y*squareSize,squareSize,squareSize))
 
             let drawInfo () =
 
@@ -404,10 +457,10 @@ type GameWindow (width, height, game) as this =
                 
 
             do drawBackground ()
-            do grid.squares |> Map.iter (drawSquare squareBrush)
+            do grid.squares |> Map.iter (drawSquare)
             do
                 ActiveTile.Map game.active
-                |> List.iter (fun position -> drawSquare tileBrush position Square)
+                |> List.iteri (fun i position -> drawSquare position (Tile.square game.active.tile i game.active.rotation))
             do drawInfo ()
             if game.over then do drawGameOver ()
    
@@ -443,7 +496,7 @@ type GameWindow (width, height, game) as this =
 let main argv = 
 
     let width, height = 10,22
-    let squareSize = 30
+    let squareSize = 40
     
     let game = Game.start (width, height)
 
